@@ -5,6 +5,12 @@
 //  Glue between MotionManager, CSVLogger, and the SwiftUI view. Owns all
 //  observable state the UI renders. Everything here runs on the main actor.
 //
+//  PHASE 1: pick-label-THEN-record. The user selects ONE `SessionLabel`
+//  (and, for eating, an optional `FoodTexture`) before tapping Start;
+//  recording is blocked until a label is chosen. The resolved token drives
+//  BOTH the filename and the per-row CSV label column (the logger owns the
+//  column — see CSVLogger).
+//
 
 import Foundation
 import Observation
@@ -24,9 +30,24 @@ final class RecorderViewModel {
     var lastFileURL: URL?
     var statusMessage = "Ready"
 
-    /// What to call this session (used in the filename). Phase 1 will swap this
-    /// for the eating/talking/etc. labels; for Phase 0 it's freeform.
-    var sessionLabel = "freeform"
+    // MARK: - Labeling (Phase 1)
+
+    /// The activity the user is about to record. `nil` until they pick one —
+    /// recording is blocked while nil so every file is labeled.
+    var selectedLabel: SessionLabel?
+
+    /// Optional texture tag; only meaningful when `selectedLabel == .eating`.
+    var selectedTexture: FoodTexture = .none
+
+    /// Token used for BOTH the filename and the per-row label column,
+    /// e.g. "eating-crunchy", "walking". Empty when no label is picked.
+    var resolvedToken: String {
+        selectedLabel?.token(texture: selectedTexture) ?? ""
+    }
+
+    /// Label of the most recently completed session (for the status line and
+    /// any UI that wants it without re-parsing the filename).
+    var lastRecordedToken = ""
 
     private let motion = MotionManager()
     private let logger = CSVLogger()
@@ -38,6 +59,11 @@ final class RecorderViewModel {
     }
 
     var motionAvailable: Bool { motion.isDeviceMotionAvailable }
+
+    /// Record-button gate: a label must be chosen AND motion must be available.
+    /// (The `connected` observed var flips on the same ear-detection event that
+    /// changes availability, so the button re-evaluates reactively in practice.)
+    var canRecord: Bool { selectedLabel != nil && motion.isDeviceMotionAvailable }
 
     var authorizationText: String {
         switch MotionManager.authorizationStatus {
@@ -57,24 +83,40 @@ final class RecorderViewModel {
         }
     }
 
+    /// Pick a label. Clears a stale texture when switching to a label that
+    /// doesn't support one, so e.g. a leftover "crunchy" never leaks into a
+    /// walking session.
+    func select(_ label: SessionLabel) {
+        selectedLabel = label
+        if !label.supportsTexture { selectedTexture = .none }
+    }
+
     func toggleRecording() {
         recording ? stop() : start()
     }
 
     private func start() {
+        // Defense in depth behind the disabled button.
+        guard selectedLabel != nil else {
+            statusMessage = "Pick a label first"
+            return
+        }
         guard motion.isDeviceMotionAvailable else {
             statusMessage = "No headphone motion — are AirPods connected to this iPhone?"
             return
         }
         sampleCount = 0
         sampleRateHz = 0
-        lastFileURL = logger.start(label: sessionLabel)
+        // Snapshot the token ONCE; the logger reuses it for every row.
+        let token = resolvedToken
+        lastFileURL = logger.start(label: token)
         motion.start()
         recording = true
-        statusMessage = "Recording \(sessionLabel)…"
+        statusMessage = "Recording \(token)…"
     }
 
     private func stop() {
+        lastRecordedToken = resolvedToken
         motion.stop()
         let url = logger.stop()
         lastFileURL = url

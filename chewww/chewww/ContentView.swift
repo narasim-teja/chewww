@@ -2,8 +2,10 @@
 //  ContentView.swift
 //  chewww
 //
-//  Phase 0 spike UI: start/stop recording, live sample rate (Hz), buds in/out
-//  status, sample count, and a Share button to get the CSV off-device.
+//  Phase 1: labeled-dataset collector. Pick ONE label (and, for eating, an
+//  optional texture) BEFORE recording — the record button stays disabled
+//  until a label is chosen. Live sample rate (Hz), buds in/out status, sample
+//  count, Start/Stop, Share, and a History link to browse collected sessions.
 //
 
 import SwiftUI
@@ -13,15 +15,31 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                statusCard
-                liveReadout
-                Spacer()
-                recordButton
-                shareButton
+            ScrollView {
+                VStack(spacing: 24) {
+                    statusCard
+                    if !vm.recording {
+                        labelPicker
+                        if vm.selectedLabel?.supportsTexture == true {
+                            texturePicker
+                        }
+                    }
+                    liveReadout
+                    recordButton
+                    shareButton
+                }
+                .padding()
             }
-            .padding()
             .navigationTitle("chewww")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        SessionHistoryView()
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                }
+            }
             .onAppear { vm.refreshAvailability() }
         }
     }
@@ -49,6 +67,62 @@ struct ContentView: View {
         }
         .padding()
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: - Label picker (grid of the six labels)
+
+    private var labelPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Label")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 12)],
+                      spacing: 12) {
+                ForEach(SessionLabel.allCases) { label in
+                    labelTile(label)
+                }
+            }
+        }
+    }
+
+    private func labelTile(_ label: SessionLabel) -> some View {
+        let isSelected = vm.selectedLabel == label
+        return Button {
+            withAnimation { vm.select(label) }   // animate the texture row in/out
+        } label: {
+            VStack(spacing: 6) {
+                Image(systemName: label.systemImage)
+                    .font(.title2)
+                Text(label.title)
+                    .font(.caption)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .padding(.vertical, 10)
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .background(isSelected ? Color.accentColor : Color(.secondarySystemBackground),
+                        in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Texture picker (only when eating)
+
+    private var texturePicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Texture")
+                .font(.headline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Picker("Texture", selection: $vm.selectedTexture) {
+                ForEach(FoodTexture.allCases) { texture in
+                    Text(texture.title).tag(texture)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .transition(.opacity)
     }
 
     // MARK: - Live numbers
@@ -97,10 +171,12 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
                 .padding()
                 .foregroundStyle(.white)
-                .background(vm.recording ? Color.red : Color.accentColor,
+                .background(vm.recording ? Color.red
+                            : (vm.canRecord ? Color.accentColor : Color.gray),
                             in: RoundedRectangle(cornerRadius: 16))
         }
-        .disabled(!vm.motionAvailable && !vm.recording)
+        // Always allow Stop; block Start until a label is picked + motion ready.
+        .disabled(!vm.recording && !vm.canRecord)
     }
 
     private var shareButton: some View {
