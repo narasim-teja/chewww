@@ -27,8 +27,13 @@ matplotlib.use("Agg")  # no display needed; we save a PNG
 import matplotlib.pyplot as plt
 
 FS = 50.0                 # confirmed sample rate (Hz) — Phase 0 finding
-CHEW_BAND = (1.0, 2.0)    # chewing fundamental, per the literature
-WIDE_BAND = (0.5, 4.0)    # broader band for context
+# NOTE: literature (on 25 Hz hardware) puts chewing at 1-2 Hz. But on the 50 Hz
+# Pro 3, Teja's chewing peaks at ~3.6 Hz with strong 2-4 Hz structure, while
+# talking is dominated by <1 Hz head-bob. So the discriminating band is 2-4 Hz,
+# not 1-2 Hz. This is a real Phase 0 finding — see docs/chewww.md §2.
+CHEW_BAND = (2.0, 4.0)    # empirical chewing band for Pro 3 @ 50 Hz (Teja)
+TALK_BAND = (0.3, 1.0)    # talking / head-bob band, for contrast
+WIDE_BAND = (0.5, 6.0)    # broader band for context
 # Magnitude of (userAcceleration) is our primary chewing-signal candidate:
 # gravity-removed, so it isolates active head/jaw motion.
 
@@ -70,8 +75,8 @@ def analyze(path):
     freqs, power = spectrum(acc)
 
     total = band_energy(freqs, power, 0.0, FS / 2)      # all energy
-    chew = band_energy(freqs, power, *CHEW_BAND)
-    wide = band_energy(freqs, power, *WIDE_BAND)
+    chew = band_energy(freqs, power, *CHEW_BAND)        # 2-4 Hz
+    talk = band_energy(freqs, power, *TALK_BAND)        # 0.3-1 Hz
 
     # Dominant frequency in the wide band (where's the action?)
     wmask = (freqs >= WIDE_BAND[0]) & (freqs <= WIDE_BAND[1])
@@ -80,8 +85,11 @@ def analyze(path):
     return {
         "name": os.path.basename(path),
         "dur": t[-1],
-        "chew_index": chew / total if total else 0.0,   # fraction in 1-2 Hz
-        "wide_index": wide / total if total else 0.0,
+        "chew_index": chew / total if total else 0.0,   # fraction in 2-4 Hz
+        "talk_index": talk / total if total else 0.0,   # fraction in 0.3-1 Hz
+        # The money feature: ratio of chewing-band to talking-band energy.
+        # High => chewing. Low => talking. Single most discriminating number.
+        "chew_talk_ratio": chew / talk if talk else float("inf"),
         "peak_hz": peak_f,
         "t": t, "acc": acc, "freqs": freqs, "power": power,
     }
@@ -91,32 +99,33 @@ def main(paths):
     results = [analyze(p) for p in paths]
 
     # --- printed table ---
-    print(f"\n{'file':<40} {'dur(s)':>7} {'chew 1-2Hz':>11} {'wide .5-4':>10} {'peak Hz':>8}")
-    print("-" * 80)
+    print(f"\n{'file':<40} {'dur(s)':>7} {'2-4Hz':>7} {'.3-1Hz':>7} "
+          f"{'chew/talk':>10} {'peak Hz':>8}")
+    print("-" * 84)
     for r in results:
         print(f"{r['name']:<40} {r['dur']:>7.1f} "
-              f"{r['chew_index']*100:>10.1f}% {r['wide_index']*100:>9.1f}% "
-              f"{r['peak_hz']:>8.2f}")
+              f"{r['chew_index']*100:>6.1f}% {r['talk_index']*100:>6.1f}% "
+              f"{r['chew_talk_ratio']:>9.2f}x {r['peak_hz']:>8.2f}")
     print()
 
-    # crude verdict if exactly the two canonical files are present
+    # verdict using the chew/talk band-energy ratio (the discriminating feature)
     chew_files = [r for r in results if "chew" in r["name"].lower()]
     talk_files = [r for r in results if "talk" in r["name"].lower()]
     if chew_files and talk_files:
-        c = np.mean([r["chew_index"] for r in chew_files])
-        k = np.mean([r["chew_index"] for r in talk_files])
-        ratio = c / k if k else float("inf")
-        print(f"chewing chew-index = {c*100:.1f}%   talking chew-index = {k*100:.1f}%   "
-              f"ratio = {ratio:.1f}x")
-        if ratio >= 2.0:
-            print("=> CLEAN SEPARATION. Chewing's 1-2 Hz band is distinctly hotter. "
-                  "Phase 2 cheap-classifier recipe should work.\n")
-        elif ratio >= 1.3:
-            print("=> PARTIAL separation. Signal is there but not dramatic — "
-                  "calibration + more features will matter.\n")
+        c = np.mean([r["chew_talk_ratio"] for r in chew_files])
+        k = np.mean([r["chew_talk_ratio"] for r in talk_files])
+        sep = c / k if k else float("inf")
+        print(f"chewing chew/talk = {c:.2f}x    talking chew/talk = {k:.2f}x    "
+              f"separation = {sep:.1f}x")
+        if sep >= 3.0:
+            print("=> STRONG SEPARATION. The 2-4 Hz chewing band vs <1 Hz talking band "
+                  "splits these cleanly. Phase 2 cheap-classifier recipe will work.\n")
+        elif sep >= 1.5:
+            print("=> DECENT separation. Signal is clearly there; calibration + a few "
+                  "more features tighten it up.\n")
         else:
-            print("=> WEAK separation in this clip. Don't panic — check the plot, "
-                  "try a crunchier food, longer clip, or other features (rot_mag).\n")
+            print("=> WEAK separation in this clip. Check the plot; try a crunchier "
+                  "food, longer clip, or other features (rot_mag).\n")
 
     # --- plot ---
     os.makedirs("analysis/out", exist_ok=True)
@@ -129,7 +138,8 @@ def main(paths):
         ax_t.set_xlabel("s"); ax_t.set_ylabel("g")
 
         ax_f.plot(r["freqs"], r["power"], lw=0.8)
-        ax_f.axvspan(*CHEW_BAND, color="orange", alpha=0.25, label="chew band 1-2 Hz")
+        ax_f.axvspan(*TALK_BAND, color="steelblue", alpha=0.18, label="talk band .3-1 Hz")
+        ax_f.axvspan(*CHEW_BAND, color="orange", alpha=0.25, label="chew band 2-4 Hz")
         ax_f.set_xlim(0, 6)
         ax_f.set_title(f"spectrum (peak {r['peak_hz']:.2f} Hz, "
                        f"chew-index {r['chew_index']*100:.1f}%)")

@@ -90,9 +90,11 @@ chewww turns AirPods into a passive eating detector:
 
 **Goal:** Hit published numbers with the cheap proven recipe. Don't reach for deep learning first.
 
-- [ ] ~3–4 s sliding windows.
+> **De-risked early (June 2026 separability check).** On a 30s pure-chew vs 30s pure-talk clip, the activities separate by **7×** on a single FFT-band feature — the cheap recipe is clearly viable, no deep learning needed. **Key correction: chewing peaks at ~3.6 Hz with strong 2–4 Hz structure on the Pro 3 @ 50 Hz, NOT the 1–2 Hz the literature (25 Hz hardware) reports.** Talking is dominated by <1 Hz head-bob. Design features around the **2–4 Hz chewing band**. (n=1 so far — re-validate the band on other users' data.) Tooling: `analysis/separability.py`.
+
+- [ ] ~3–4 s sliding windows (≈ 150–200 samples at 50 Hz).
 - [ ] z-score normalize per window.
-- [ ] Features: time-domain (mean/var/energy/zero-cross) + **frequency-domain (FFT band ~1–2 Hz = chewing fingerprint)**.
+- [ ] Features: time-domain (mean/var/energy/zero-cross) + **frequency-domain (FFT band ~2–4 Hz = chewing fingerprint; ratio of 2–4 Hz to 0.3–1 Hz energy is the strongest single discriminator found so far)**.
 - [ ] **Random Forest** or small **SVM**. Runs trivially on-device.
 - [ ] **Two-stage:** (eat / not-eat) → episode aggregation (4s window → 20s bout → bouts within 2 min = episode). Documented best performer.
 - [ ] Validate with leave-one-session-out on your own data.
