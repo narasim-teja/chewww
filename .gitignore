@@ -17,3 +17,10 @@ build/
 # Secrets / signing
 *.mobileprovision
 *.p12
+
+# Collected motion data (personal — kept out of the open-source repo)
+data/
+*.csv
+
+# Generated analysis artifacts
+analysis/out/

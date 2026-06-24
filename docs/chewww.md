@@ -2,7 +2,7 @@
 
 > Working title. An all-in-one passive food-intake tracker built on AirPods motion sensing. Detect *that* a user is eating (chewing), prompt them to log *what*, and become the WHOOP-equivalent for diet without any new hardware.
 
-**Status:** Pre-build / weekend spike
+**Status:** Phase 0 complete (spike proven) → starting Phase 1
 **Owner:** Teja
 **Target:** TestFlight launch (v1)
 **Last updated:** June 2026
@@ -41,7 +41,7 @@ chewww turns AirPods into a passive eating detector:
 
 `CMHeadphoneMotionManager` (CoreMotion) gives fused `CMDeviceMotion`: **attitude, user acceleration, rotation rate**.
 
-- **Sample rate: ~25 Hz in practice** from the buds (API max is 100 Hz, but headphone motion streams lower). Plenty for chewing (~1–2 Hz, well above Nyquist). Kills any fast micro-event ambition.
+- **Sample rate: 50 Hz confirmed on AirPods Pro 3** (Phase 0 finding, June 2026 — measured rock-solid 20 ms deltas across real recordings). This is **2× the ~25 Hz the literature assumed** from older buds. The doc was originally scoped for ~25 Hz; the Pro 3 streams richer. Plenty for chewing (~1–2 Hz, sits at ~1/25 of Nyquist — pristine), with real headroom for cleaner FFT features, better short-snack detection, and faster micro-events the 25 Hz assumption ruled out. (API max is 100 Hz; headphone motion historically streamed lower, but the Pro 3 gives 50.)
 - **No raw accel/gyro** from AirPods — only the processed `CMDeviceMotion`. The 800 Hz / 200 Hz `CMBatchedSensorManager` path is **Apple-Watch-only + requires an active HealthKit workout** — does NOT apply to AirPods.
 - **Ear-detection is free signal.** Buds out → disconnect event; back in → connect event. Use it for "are they even wearing it."
 - **Required:** `NSMotionUsageDescription` in Info.plist or the stream silently fails.
@@ -62,13 +62,13 @@ chewww turns AirPods into a passive eating detector:
 
 **Goal:** Prove you can stream + export labeled `CMDeviceMotion` from your Pro 3.
 
-- [ ] Fork `tukuyo/AirPodsPro-Motion-Sampler` (canonical CSV logger).
-- [ ] Add `NSMotionUsageDescription` to Info.plist.
-- [ ] Stream attitude / user acceleration / rotation rate → CSV.
-- [ ] **Verify real sample rate** by timestamping deltas. Confirm ~25 Hz.
-- [ ] Confirm connect/disconnect (ear-detection) events fire.
+- [x] ~~Fork `tukuyo/AirPodsPro-Motion-Sampler`~~ → built a fresh native SwiftUI app instead (we own it end-to-end; becomes the Phase 1/3 app directly).
+- [x] Add `NSMotionUsageDescription` to Info.plist (+ `UIFileSharingEnabled`, `LSSupportsOpeningDocumentsInPlace` for Files-app CSV access).
+- [x] Stream attitude / user acceleration / rotation rate (+ quaternion, gravity, sensor location) → CSV.
+- [x] **Verified real sample rate** by timestamping deltas → **50 Hz, rock-solid** (not 25 — see §2).
+- [x] Connect/disconnect (ear-detection) events wired via `CMHeadphoneMotionManagerDelegate`.
 
-**Exit:** A CSV of your own head motion you can open and eyeball.
+**Exit:** ✅ A CSV of your own head motion you can open and eyeball. Done — two ~50s recordings captured & analyzed (`data/`, gitignored).
 
 ### Phase 1 — Be your own dataset (weekend core)
 
@@ -133,7 +133,7 @@ chewww turns AirPods into a passive eating detector:
 
 ## 6. Open Questions / Watchlist
 
-- Real sample rate confirmed at ~25 Hz? (Phase 0)
+- ~~Real sample rate confirmed at ~25 Hz? (Phase 0)~~ → **Resolved: 50 Hz on Pro 3** (2× expected).
 - Short-snack detection — acceptable, or does it need a separate model? (Phase 1/2)
 - Talking-while-walking contamination? (Phase 1)
 - Background execution longevity — does iOS suspend the motion stream? Battery cost over a full day? (Phase 3)
