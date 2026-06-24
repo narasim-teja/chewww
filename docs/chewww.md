@@ -115,10 +115,45 @@ chewww turns AirPods into a passive eating detector:
 
 ---
 
+## 3b. Signal Surface & The Quantization Thesis (findings — parked for later phases)
+
+> Added June 2026 after eyeballing the first real Pro 3 data with an open mind. **None of this is v1 scope** — it's the product direction the data unlocks, parked here so we build toward it.
+
+### What the AirPods stream actually exposes (the honest inventory)
+
+We capture the *complete* useful raw surface already: attitude, rotationRate, userAcceleration, gravity, sensorLocation @ 50 Hz. The open-minded sweep turned up **no hidden raw channels** — but a few unused-but-real levers and some tempting dead ends worth recording so we don't re-investigate:
+
+**Unused levers (cheap upgrades, later phases):**
+- `xArbitraryCorrectedZVertical` reference frame (we use the default) — adds gyro-drift correction; minor win for long sessions, ~one-line change.
+- `sensorLocation` bud-switch = a free "wear-state changed" event (we log it; don't act on it yet).
+- `AVAudioSession` route changes = backup connect/disconnect signal alongside the motion delegate.
+
+**Dead ends (do NOT chase):**
+- `magneticField` / compass / heading — AirPods expose no magnetometer.
+- **AirPods Pro 3 PPG heart-rate sensor exists but has NO public real-time API** — HR only reaches apps indirectly via HealthKit *after* a logged Apple Fitness workout, not streamed. Park it; it's huge if Apple ever opens it.
+- No raw accel/gyro (fused only), no dual-bud simultaneous streaming, no mic-as-sensor (and using the mic *kills* the motion stream), no battery/proximity/in-ear API.
+
+### The quantization thesis — chewww as "WHOOP for digestion"
+
+The original framing was binary: *detect that you ate → human logs what.* But the first data shows we can extract **more than detection, for free, on-device, from the same stream:**
+
+- **Chew count & chew rate** — verified on real data: ~129 chew-cycles in 51s, a dead-regular **500 ms (2 Hz) rhythm**. Countable and stable. (Matches IMChew's 9.5% chew-count error.)
+- **Eating speed** — chews/min and bout duration. A real health metric (fast eating ↔ reduced satiety / overeating).
+- **Chewing effort / relative quantity** — envelope energy + chew count gives *more vs. less*. **NOT grams or calories** — motion alone genuinely can't do absolute intake, and we won't pretend it can.
+- **Bites / bout segmentation** — chew-burst → pause → repeat should segment into bites. Likely; needs a spaced-bites clip to confirm.
+- **Food texture (crunchy/soft)** — stretch; literature says needs audio. Untested.
+
+**The product this points at:** chewww measures *how* you ate (objective: chew count, rate, duration, effort) → you tell it *what* (e.g. "biscuits", "chicken rice") → it produces a **digestion / metabolic-quality score**, the way WHOOP turns "you drank alcohol" into a recovery hit. The motion is the objective mechanical signal; the food label + chew-quality metrics together produce the insight. This makes the quantization metrics the **core feature**, not a side-effect — and it's novel vs. the posture-app prior art, none of which does this.
+
+**Parked for:** Phase 2 (extract chew-count/rate/effort features alongside eat/not-eat) and a post-v1 "digestion score" layer (Phase 3+/v2). v1 still ships the simpler detect→prompt→log loop; these metrics ride on the same pipeline once it's proven.
+
+---
+
 ## 4. Roadmap Beyond v1
 
 - **v2 — Drinking detection.** Mine the v1 drinking dataset. Evaluate whether 25 Hz fused motion has *anything* usable for swallows; if not, honestly park it or explore audio.
-- **v2 — WHOOP integration.** Pull recovery / strain from WHOOP API, correlate with eating timing/patterns. (v1 keeps WHOOP as conceptual analogy only.)
+- **v2 — Digestion / metabolic-quality score (the core thesis).** Combine chew-quality metrics (count, rate, eating speed, effort — §3b) with the user's food label to produce a WHOOP-style score: *how well was this eaten / how taxing to digest.* "Biscuits, eaten fast, low chew effort" scores differently from "chicken rice, chewed thoroughly." Motion = objective mechanical signal; food label + metrics = the insight. Builds directly on the Phase 2 feature pipeline.
+- **v2 — WHOOP integration.** Pull recovery / strain from WHOOP API, correlate with eating timing/patterns + the digestion score. (v1 keeps WHOOP as conceptual analogy only.)
 - **Later — Food-type hints.** Survey work shows motion+audio can classify state (solid/liquid/semi-liquid) and texture (crunchy/soft). Stretch; needs audio modality.
 - **Later — Cloud model.** Aggregate opted-in user data → general model that reduces calibration burden. TS/Bun backend territory.
 
